@@ -1,0 +1,5 @@
+{
+  "name": "Post-Quantum PGP Key Tool",
+  "description": "A web-based toolkit to generate and manage SLH-DSA (SPHINCS+) post-quantum keys with a PGP-style interface, inspired by modern PGP tools. This application allows for the generation of signing keys, as well as signing and verifying messages using post-quantum cryptographic algorithms.",
+  "requestFramePermissions": []
+}
