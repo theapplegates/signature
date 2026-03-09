@@ -7,9 +7,10 @@ interface Props {
   keys: KeyPair[];
   isGenerating: boolean;
   onViewKey: (key: KeyPair) => void;
+  onDeleteKey: (keyId: string) => void;
 }
 
-export const KeyManagementTab: React.FC<Props> = ({ onGenerate, keys, isGenerating, onViewKey }) => {
+export const KeyManagementTab: React.FC<Props> = ({ onGenerate, keys, isGenerating, onViewKey, onDeleteKey }) => {
   const [userId, setUserId] = useState('');
   const [passphrase, setPassphrase] = useState('');
 
@@ -89,12 +90,20 @@ export const KeyManagementTab: React.FC<Props> = ({ onGenerate, keys, isGenerati
                     <p className="text-sm text-gray-500 font-mono">{key.fingerprint}</p>
                   </div>
                 </div>
-                <button 
-                  onClick={() => onViewKey(key)}
-                  className="px-4 py-1.5 text-sm font-medium text-blue-600 bg-blue-100 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  View Details
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onViewKey(key)}
+                    className="px-4 py-1.5 text-sm font-medium text-blue-600 bg-blue-100 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    View Details
+                  </button>
+                  <button
+                    onClick={() => onDeleteKey(key.id)}
+                    className="px-4 py-1.5 text-sm font-medium text-red-600 bg-red-100 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                  >
+                    Delete
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
