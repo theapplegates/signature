@@ -53,10 +53,19 @@ const App: React.FC = () => {
     }, 50);
   }, []);
 
+  const handleDeleteKey = useCallback((keyId: string) => {
+    if (confirm('Are you sure you want to delete this key?')) {
+      setKeys(prevKeys => prevKeys.filter(k => k.id !== keyId));
+      if (selectedKey?.id === keyId) {
+        setSelectedKey(null);
+      }
+    }
+  }, [selectedKey]);
+
   const renderActiveTab = () => {
     switch (activeTab) {
       case TABS.KEY_MANAGEMENT:
-        return <KeyManagementTab onGenerate={handleGenerateKeyPair} keys={keys} isGenerating={isGenerating} onViewKey={setSelectedKey} />;
+        return <KeyManagementTab onGenerate={handleGenerateKeyPair} keys={keys} isGenerating={isGenerating} onViewKey={setSelectedKey} onDeleteKey={handleDeleteKey} />;
       case TABS.SIGN:
         return <SignTab keys={keys} />;
       case TABS.VERIFY:
