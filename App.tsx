@@ -80,7 +80,7 @@ const App: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <header className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900">Post-Quantum Toolkit</h1>
-          <p className="text-lg text-gray-600 mt-1">Using SLH-DSA (SPHINCS+) for Quantum-Resistant Signatures</p>
+          <p className="text-lg text-gray-600 mt-1">Using SLHDSA256s_MLKEM1024_X448 — Post-Quantum Hybrid Keys</p>
         </header>
 
         <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded-md shadow-sm mb-8" role="alert">

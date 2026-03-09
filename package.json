@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@noble/curves": "^1.8.0",
     "@noble/hashes": "^2.0.1",
     "@noble/post-quantum": "^0.5.4",
     "react": "^19.1.1",
