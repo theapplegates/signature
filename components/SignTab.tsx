@@ -13,6 +13,7 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
   const [message, setMessage] = useState('');
   const [signature, setSignature] = useState('');
   const [signedMessage, setSignedMessage] = useState('');
+  const [clearSignedMessage, setClearSignedMessage] = useState('');
   const [isSigning, setIsSigning] = useState(false);
   const [isCopied, copy] = useCopyToClipboard();
   const [isCopiedMsg, copyMsg] = useCopyToClipboard();
@@ -28,6 +29,7 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
     setIsSigning(true);
     setSignature('');
     setSignedMessage('');
+    setClearSignedMessage('');
     setDecryptionError(null);
     
     // Use setTimeout to allow UI to update before potentially blocking operation
@@ -55,6 +57,7 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
             });
             setSignature(result.signature);
             setSignedMessage(result.signedMessage);
+            setClearSignedMessage(result.clearSignedMessage);
         } catch (error) {
             console.error("Signing failed:", error);
             alert("An error occurred during signing.");
@@ -69,6 +72,7 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
     setPassphrase('');
     setSignature('');
     setSignedMessage('');
+    setClearSignedMessage('');
     setDecryptionError(null);
   };
 
@@ -130,19 +134,24 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
         {isSigning ? 'Signing...' : 'Generate Signature'}
       </button>
 
-      {signedMessage && (
+      {clearSignedMessage && (
         <div>
-          <label htmlFor="signed-message-output" className="block text-sm font-medium text-gray-700 mb-1">Signed Message (includes key identity headers)</label>
+          <label htmlFor="clear-signed-output" className="block text-sm font-medium text-gray-700 mb-1">
+            PGP Signed Message — copy this entire block to share or verify
+          </label>
+          <p className="text-xs text-gray-500 mb-2">
+            The <code className="bg-gray-100 px-1 rounded">Comment:</code> lines identifying your key are included in the message body and are part of what was signed. Paste the whole block into the Verify tab to check it.
+          </p>
           <div className="relative">
-             <textarea
-              id="signed-message-output"
+            <textarea
+              id="clear-signed-output"
               readOnly
-              rows={10}
-              value={signedMessage}
+              rows={18}
+              value={clearSignedMessage}
               className="w-full px-3 py-2 border border-gray-300 bg-gray-50 rounded-md shadow-sm font-mono text-sm"
             />
             <button
-              onClick={() => copyMsg(signedMessage)}
+              onClick={() => copyMsg(clearSignedMessage)}
               className="absolute top-2 right-2 p-1.5 bg-gray-200 rounded-md hover:bg-gray-300 transition"
               aria-label="Copy signed message"
             >
@@ -153,15 +162,17 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
       )}
 
       {signature && (
-        <div>
-          <label htmlFor="signature-output" className="block text-sm font-medium text-gray-700 mb-1">Generated Signature (.asc format)</label>
-          <div className="relative">
-             <textarea
+        <details className="mt-2">
+          <summary className="text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700 select-none">
+            Show detached signature only (.asc)
+          </summary>
+          <div className="relative mt-2">
+            <textarea
               id="signature-output"
               readOnly
-              rows={12}
+              rows={10}
               value={signature}
-              className="w-full px-3 py-2 border border-gray-300 bg-gray-50 rounded-md shadow-sm font-mono"
+              className="w-full px-3 py-2 border border-gray-300 bg-gray-50 rounded-md shadow-sm font-mono text-sm"
             />
             <button
               onClick={() => copy(signature)}
@@ -171,7 +182,7 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
               {isCopied ? <CheckIcon /> : <CopyIcon />}
             </button>
           </div>
-        </div>
+        </details>
       )}
     </div>
   );
