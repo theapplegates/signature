@@ -25,7 +25,7 @@ export const KeyManagementTab: React.FC<Props> = ({ onGenerate, keys, isGenerati
     <div className="space-y-8">
       <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
         <h2 className="text-2xl font-semibold text-gray-800 mb-1">Generate New Key Pair</h2>
-        <p className="text-gray-500 mb-6">Algorithm: <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">SLHDSA256s_MLKEM1024_X448</span></p>
+        <p className="text-gray-500 mb-6">Algorithm: <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">SLH-DSA-SHA2-256f</span> (FIPS 205, fast variant)</p>
 
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>

@@ -5,7 +5,8 @@ export const TABS = {
 } as const;
 
 export const ALGORITHM = {
-  name: 'SLHDSA256s_MLKEM1024_X448',
+  name: 'SLH-DSA-SHA2-256f',
+  displayName: 'SLH-DSA-SHA2',
   security: 256,
-  type: 's',
+  type: 'f',
 };

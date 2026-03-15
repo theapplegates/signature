@@ -1,17 +1,27 @@
-
 import React, { useState } from 'react';
-import { verify, hexToBytes } from '../services/cryptoService';
-import { ALGORITHM } from '../constants';
+import { verify, extractRawPublicKeyFromV6Packet } from '../services/cryptoService';
 
 // A simple PGP block parser to extract base64 data
 function extractBase64FromPgp(pgpBlock: string): string {
     const lines = pgpBlock.split('\n');
     const base64Lines = lines.filter(line => 
-        !line.startsWith('-----') && !line.startsWith('Comment:') && !line.startsWith('Version:') && line.trim() !== ''
+        !line.startsWith('-----') &&
+        !line.startsWith('Comment:') &&
+        !line.startsWith('Version:') &&
+        !line.startsWith('Hash:') &&
+        line.trim() !== ''
     );
     return base64Lines.join('');
 }
 
+function base64ToBytes(b64: string): Uint8Array {
+    const binary = atob(b64);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        out[i] = binary.charCodeAt(i);
+    }
+    return out;
+}
 
 export const VerifyTab: React.FC = () => {
     const [publicKeyPgp, setPublicKeyPgp] = useState('');
@@ -28,13 +38,17 @@ export const VerifyTab: React.FC = () => {
 
         setTimeout(() => {
             try {
+                // Decode the v6 Public Key packet body from PGP armor
                 const base64PublicKey = extractBase64FromPgp(publicKeyPgp);
-                const publicKeyBytes = Uint8Array.from(atob(base64PublicKey), c => c.charCodeAt(0));
-                
-                // Convert bytes to hex string for the verify function
-                const publicKeyHex = Array.from(publicKeyBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+                const v6PacketBytes = base64ToBytes(base64PublicKey);
 
+                // Extract the raw SLH-DSA public key from the v6 packet
+                const rawPk = extractRawPublicKeyFromV6Packet(v6PacketBytes);
+                const publicKeyHex = Array.from(rawPk, byte => byte.toString(16).padStart(2, '0')).join('');
+
+                // Extract the base64 signature payload (contains salt || signature)
                 const base64Signature = extractBase64FromPgp(signature);
+
                 const result = verify(publicKeyHex, message, base64Signature);
                 setVerificationResult(result);
             } catch (error) {
@@ -63,14 +77,14 @@ export const VerifyTab: React.FC = () => {
             </div>
 
             <div>
-                <label htmlFor="message-to-verify" className="block text-sm font-medium text-gray-700 mb-1">Original Message</label>
+                <label htmlFor="message-to-verify" className="block text-sm font-medium text-gray-700 mb-1">Signed Message (with key identity headers)</label>
                 <textarea
                     id="message-to-verify"
-                    rows={4}
+                    rows={8}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Enter the exact original message..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition font-mono"
+                    placeholder={"Comment: User ID:\t...\nComment: Valid from:\t...\nComment: Type:\t...\nComment: Usage:\t...\nComment: Fingerprint:\t...\n\nYour original message here..."}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition font-mono text-sm"
                 />
             </div>
 
