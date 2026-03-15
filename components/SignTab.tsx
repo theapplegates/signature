@@ -12,8 +12,10 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
   const [selectedKeyId, setSelectedKeyId] = useState<string>('');
   const [message, setMessage] = useState('');
   const [signature, setSignature] = useState('');
+  const [signedMessage, setSignedMessage] = useState('');
   const [isSigning, setIsSigning] = useState(false);
   const [isCopied, copy] = useCopyToClipboard();
+  const [isCopiedMsg, copyMsg] = useCopyToClipboard();
   const [passphrase, setPassphrase] = useState('');
   const [decryptionError, setDecryptionError] = useState<string | null>(null);
 
@@ -25,6 +27,7 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
 
     setIsSigning(true);
     setSignature('');
+    setSignedMessage('');
     setDecryptionError(null);
     
     // Use setTimeout to allow UI to update before potentially blocking operation
@@ -45,11 +48,13 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
                     return;
                 }
             }
-            const sig = sign(privateKeyHex, message, {
+            const result = sign(privateKeyHex, message, {
                 userId: selectedKey.userId,
                 fingerprint: selectedKey.fingerprint,
+                createdAt: selectedKey.createdAt,
             });
-            setSignature(sig);
+            setSignature(result.signature);
+            setSignedMessage(result.signedMessage);
         } catch (error) {
             console.error("Signing failed:", error);
             alert("An error occurred during signing.");
@@ -63,6 +68,7 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
     setSelectedKeyId(e.target.value);
     setPassphrase('');
     setSignature('');
+    setSignedMessage('');
     setDecryptionError(null);
   };
 
@@ -123,6 +129,28 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
       >
         {isSigning ? 'Signing...' : 'Generate Signature'}
       </button>
+
+      {signedMessage && (
+        <div>
+          <label htmlFor="signed-message-output" className="block text-sm font-medium text-gray-700 mb-1">Signed Message (includes key identity headers)</label>
+          <div className="relative">
+             <textarea
+              id="signed-message-output"
+              readOnly
+              rows={10}
+              value={signedMessage}
+              className="w-full px-3 py-2 border border-gray-300 bg-gray-50 rounded-md shadow-sm font-mono text-sm"
+            />
+            <button
+              onClick={() => copyMsg(signedMessage)}
+              className="absolute top-2 right-2 p-1.5 bg-gray-200 rounded-md hover:bg-gray-300 transition"
+              aria-label="Copy signed message"
+            >
+              {isCopiedMsg ? <CheckIcon /> : <CopyIcon />}
+            </button>
+          </div>
+        </div>
+      )}
 
       {signature && (
         <div>
