@@ -380,19 +380,39 @@ function createPgpSignatureBlock(
 }
 
 /**
+ * Build a combined PGP clearsigned message per RFC 4880 clearsign format:
+ *   -----BEGIN PGP SIGNED MESSAGE-----
+ *   Hash: SHA3-512
+ *
+ *   [signed message content — comment block + user message]
+ *   -----BEGIN PGP SIGNATURE-----
+ *   ...
+ *   -----END PGP SIGNATURE-----
+ *
+ * This is the primary output format: comments and message are visible to the
+ * reader, and the signature block is appended so everything travels together.
+ */
+function createClearSignedMessage(signedMessageContent: string, signatureBlock: string): string {
+  return `-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA3-512\n\n${signedMessageContent}\n${signatureBlock}`;
+}
+
+/**
  * Sign a message with SLH-DSA-SHA2-256f per RFC 9580 v6 profile:
  *   1. Prepend key identity comment headers to the message
  *   2. Generate 32-byte random salt (RFC 9580 Section 5.2.3, Table 23)
  *   3. Compute digest = SHA3-512(salt || message_bytes) (RFC 9580 Section 5.2.4)
  *   4. Sign the digest with SLH-DSA-SHA2-256f (FIPS 205)
  *
- * Returns the PGP signature block and the full signed message content.
+ * Returns:
+ *   - clearSignedMessage: combined PGP clearsign block (primary output)
+ *   - signature: the detached PGP signature block
+ *   - signedMessage: the signed content (comment headers + user message)
  */
 export function sign(
   privateKeyHex: string,
   message: string,
   keyInfo: { userId: string; fingerprint: string; createdAt: string }
-): { signature: string; signedMessage: string } {
+): { signature: string; signedMessage: string; clearSignedMessage: string } {
   const secretKey = hexToBytes(privateKeyHex);
 
   // Build full signed message content with key identity headers prepended
@@ -409,7 +429,10 @@ export function sign(
   const signatureBytes = slh_dsa_sha2_256f.sign(digest, secretKey);
   const signatureBlock = createPgpSignatureBlock(signatureBytes, salt, keyInfo);
 
-  return { signature: signatureBlock, signedMessage };
+  // Combined clearsign format: comments + message + signature in one block
+  const clearSignedMessage = createClearSignedMessage(signedMessage, signatureBlock);
+
+  return { signature: signatureBlock, signedMessage, clearSignedMessage };
 }
 
 // ═══════════════════════════════════════════════════════════════════
