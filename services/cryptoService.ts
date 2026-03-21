@@ -1,12 +1,13 @@
 /**
  * Post-Quantum Cryptographic Service
  *
- * Implements SLH-DSA-SHA2-256f digital signatures with:
+ * Implements Winternitz-based SLH-DSA-SHA2-256f digital signatures with:
  *   - v6 OpenPGP key packets per RFC 9580 Section 5.5.2.3
  *   - v6 fingerprint via SHA-256 per RFC 9580 Section 5.5.4.3
  *   - v6 signature packets with 32-byte salt per RFC 9580 Section 5.2.3
  *   - SHA3-512 message digest per RFC 9580 Section 9.5 (Hash ID 14)
  *   - SLH-DSA signing per FIPS 205 / draft-ietf-openpgp-pqc
+ *   - Winternitz one-time signature chains within the SLH-DSA construction
  */
 
 import { slh_dsa_sha2_256f } from '@noble/post-quantum/slh-dsa.js';
@@ -213,13 +214,13 @@ export function buildKeyCommentBlock(
   hasSecretKey: boolean
 ): string {
   const typeDesc = hasSecretKey
-    ? `${ALGORITHM.security}-bit ${ALGORITHM.displayName} (fast, secret key available)`
-    : `${ALGORITHM.security}-bit ${ALGORITHM.displayName} (fast)`;
+    ? `${ALGORITHM.security}-bit ${ALGORITHM.displayName} (Winternitz-based, fast, secret key available)`
+    : `${ALGORITHM.security}-bit ${ALGORITHM.displayName} (Winternitz-based, fast)`;
   return [
     `Comment: User ID:\t${userInfo.name} <${userInfo.email}>`,
     `Comment: Valid from:\t${validFrom}`,
     `Comment: Type:\t${typeDesc}`,
-    `Comment: Usage:\tPost-Quantum Digital Signing`,
+    `Comment: Usage:\tPost-Quantum Winternitz Digital Signing`,
     `Comment: Fingerprint:\t${fingerprint} (SHA3-512)`,
   ].join('\n');
 }
@@ -367,8 +368,8 @@ function createPgpSignatureBlock(
     `Hash: SHA3-512`,
     `Comment: User ID:\t${userInfo.name} <${userInfo.email}>`,
     `Comment: Signed on:\t${signedOn}`,
-    `Comment: Algorithm:\t${ALGORITHM.name} (fast)`,
-    `Comment: Usage:\tPost-Quantum Digital Signing`,
+    `Comment: Algorithm:\t${ALGORITHM.name} (Winternitz-based, fast)`,
+    `Comment: Usage:\tPost-Quantum Winternitz Digital Signing`,
     `Comment: Fingerprint:\t${keyInfo.fingerprint} (SHA3-512)`,
   ].join('\n');
   const footer = `-----END PGP SIGNATURE-----`;

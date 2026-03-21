@@ -1,5 +1,5 @@
 {
-  "name": "Post-Quantum PGP Key Tool",
-  "description": "A web-based toolkit to generate and manage SLH-DSA (SPHINCS+) post-quantum keys with a PGP-style interface, inspired by modern PGP tools. This application allows for the generation of signing keys, as well as signing and verifying messages using post-quantum cryptographic algorithms.",
+  "name": "Winternitz Signature Toolkit",
+  "description": "A web-based toolkit to generate and manage Winternitz-based SLH-DSA (SPHINCS+) post-quantum keys with a PGP-style interface. This application allows for key generation, signing, and signature verification while surfacing the Winternitz foundations of the scheme.",
   "requestFramePermissions": []
 }
