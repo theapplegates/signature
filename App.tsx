@@ -88,8 +88,8 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         <header className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900">Post-Quantum Toolkit</h1>
-          <p className="text-lg text-gray-600 mt-1">Using SLH-DSA-SHA2-256f — Post-Quantum Digital Signing</p>
+          <h1 className="text-4xl font-bold text-gray-900">Winternitz Signature Toolkit</h1>
+          <p className="text-lg text-gray-600 mt-1">Using SLH-DSA-SHA2-256f with Winternitz one-time signature chains for post-quantum signing</p>
         </header>
 
         <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded-md shadow-sm mb-8" role="alert">
@@ -97,7 +97,7 @@ const App: React.FC = () => {
             <div className="py-1"><ExclamationTriangleIcon/></div>
             <div className="ml-3">
               <p className="font-bold">Important Note</p>
-              <p className="text-sm">This application uses the <code className="bg-yellow-100 px-1 rounded">@noble/post-quantum</code> library for SLH-DSA-SHA2-256f (FIPS 205) cryptographic operations following the OpenPGP v6 profile (RFC 9580). Key fingerprints use SHA-256; message digests use SHA3-512 with a 32-byte random salt per RFC 9580 Section 5.2.4. These operations are computationally intensive and may cause your browser to become unresponsive temporarily during key generation or signing.</p>
+              <p className="text-sm">This application uses the <code className="bg-yellow-100 px-1 rounded">@noble/post-quantum</code> library for SLH-DSA-SHA2-256f (FIPS 205) cryptographic operations following the OpenPGP v6 profile (RFC 9580). SLH-DSA is a stateless hash-based signature system built from Winternitz one-time signatures and Merkle trees. Key fingerprints use SHA-256; message digests use SHA3-512 with a 32-byte random salt per RFC 9580 Section 5.2.4. These operations are computationally intensive and may cause your browser to become unresponsive temporarily during key generation or signing.</p>
             </div>
           </div>
         </div>
