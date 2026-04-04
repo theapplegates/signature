@@ -6,7 +6,7 @@ import { KeyDetailsModal } from './components/KeyDetailsModal';
 import { TabButton } from './components/TabButton';
 import { generateKeyPair as generate } from './services/cryptoService';
 import type { KeyPair, Tab } from './types';
-import { TABS } from './constants';
+import { TABS, ALGORITHM } from './constants';
 // FIX: Remove unused LockIcon import as it's not exported from the Icons module.
 import { KeyIcon, PencilIcon, CheckBadgeIcon, QuestionIcon, ExclamationTriangleIcon } from './components/icons/Icons';
 
@@ -20,7 +20,14 @@ const App: React.FC = () => {
     try {
       const storedKeys = localStorage.getItem('pq_keys');
       if (storedKeys) {
-        setKeys(JSON.parse(storedKeys));
+        const allKeys: KeyPair[] = JSON.parse(storedKeys);
+        const compatible = allKeys.filter(k => k.algorithm === ALGORITHM.name);
+        const incompatible = allKeys.length - compatible.length;
+        if (incompatible > 0) {
+          alert(`${incompatible} key(s) were generated with a different algorithm (e.g. SLH-DSA-SHA2-256f) and are incompatible with the current ${ALGORITHM.name}. They have been removed. Please generate new keys.`);
+          localStorage.setItem('pq_keys', JSON.stringify(compatible));
+        }
+        setKeys(compatible);
       }
     } catch (error) {
       console.error("Failed to load keys from localStorage", error);
@@ -89,7 +96,7 @@ const App: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <header className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900">Winternitz Signature Toolkit</h1>
-          <p className="text-lg text-gray-600 mt-1">Using SLH-DSA-SHA2-256f with Winternitz one-time signature chains for post-quantum signing</p>
+          <p className="text-lg text-gray-600 mt-1">Using SLH-DSA-SHAKE-256f (SHA-3 family) with Winternitz one-time signature chains for post-quantum signing</p>
         </header>
 
         <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded-md shadow-sm mb-8" role="alert">
@@ -97,7 +104,7 @@ const App: React.FC = () => {
             <div className="py-1"><ExclamationTriangleIcon/></div>
             <div className="ml-3">
               <p className="font-bold">Important Note</p>
-              <p className="text-sm">This application uses the <code className="bg-yellow-100 px-1 rounded">@noble/post-quantum</code> library for SLH-DSA-SHA2-256f (FIPS 205) cryptographic operations following the OpenPGP v6 profile (RFC 9580). SLH-DSA is a stateless hash-based signature system built from Winternitz one-time signatures and Merkle trees. Key fingerprints use SHA-256; message digests use SHA3-512 with a 32-byte random salt per RFC 9580 Section 5.2.4. These operations are computationally intensive and may cause your browser to become unresponsive temporarily during key generation or signing.</p>
+              <p className="text-sm">This application uses the <code className="bg-yellow-100 px-1 rounded">@noble/post-quantum</code> library for SLH-DSA-SHAKE-256f (FIPS 205) cryptographic operations following the OpenPGP v6 profile (RFC 9580). SLH-DSA is a stateless hash-based signature system built from Winternitz one-time signatures and Merkle trees. Key fingerprints use SHA-256; message digests use SHA3-512 with a 32-byte random salt per RFC 9580 Section 5.2.4. These operations are computationally intensive and may cause your browser to become unresponsive temporarily during key generation or signing.</p>
             </div>
           </div>
         </div>

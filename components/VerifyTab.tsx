@@ -181,7 +181,7 @@ export const VerifyTab: React.FC = () => {
                             rows={8}
                             value={message}
                             onChange={(e) => { setMessage(e.target.value); resetResult(); }}
-                            placeholder={"Comment: User ID:\t...\nComment: Valid from:\t...\nComment: Type:\tWinternitz / SLH-DSA-SHA2...\nComment: Usage:\t...\nComment: Fingerprint:\t...\n\nYour original message here..."}
+                            placeholder={"Comment: User ID:\t...\nComment: Valid from:\t...\nComment: Type:\tWinternitz / SLH-DSA-SHAKE...\nComment: Usage:\t...\nComment: Fingerprint:\t...\n\nYour original message here..."}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition font-mono text-sm"
                         />
                     </div>
