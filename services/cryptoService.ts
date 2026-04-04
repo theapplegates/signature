@@ -1,22 +1,23 @@
 /**
  * Post-Quantum Cryptographic Service
  *
- * Implements Winternitz-based SLH-DSA-SHA2-256f digital signatures with:
+ * Implements Winternitz-based SLH-DSA-SHAKE-256f digital signatures with:
  *   - v6 OpenPGP key packets per RFC 9580 Section 5.5.2.3
  *   - v6 fingerprint via SHA-256 per RFC 9580 Section 5.5.4.3
  *   - v6 signature packets with 32-byte salt per RFC 9580 Section 5.2.3
  *   - SHA3-512 message digest per RFC 9580 Section 9.5 (Hash ID 14)
  *   - SLH-DSA signing per FIPS 205 / draft-ietf-openpgp-pqc
+ *   - SHAKE-256 (SHA-3 family) as internal hash throughout the SLH-DSA construction
  *   - Winternitz one-time signature chains within the SLH-DSA construction
  */
 
-import { slh_dsa_sha2_256f } from '@noble/post-quantum/slh-dsa.js';
+import { slh_dsa_shake_256f } from '@noble/post-quantum/slh-dsa.js';
 import { sha3_512 } from '@noble/hashes/sha3.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { ALGORITHM } from '../constants';
 import type { KeyPair } from '../types';
 
-// ── SLH-DSA-SHA2-256f key / signature sizes (FIPS 205) ─────────────
+// ── SLH-DSA-SHAKE-256f key / signature sizes (FIPS 205) ────────────
 const SLH_DSA_PK_BYTES  = 64;   // public key
 const SLH_DSA_SK_BYTES  = 128;  // secret key
 const SLH_DSA_SIG_BYTES = 49856; // signature (fast variant)
@@ -25,10 +26,10 @@ const SLH_DSA_SIG_BYTES = 49856; // signature (fast variant)
 const V6_VERSION        = 6;
 const V6_SALT_SIZE      = 32;   // SHA3-512 salt size (RFC 9580 Table 23)
 const HASH_ALGO_SHA3_512 = 14;  // RFC 9580 Section 9.5
-// Algorithm ID for SLH-DSA-SHA2-256f — not yet assigned in IANA;
+// Algorithm ID for SLH-DSA-SHAKE-256f — not yet assigned in IANA;
 // the PQ draft uses TBD values. We use a private/experimental range value.
 // When IANA assigns the real ID, update this constant.
-const PK_ALGO_SLH_DSA_SHA2_256F = 0x65; // experimental / private-use
+const PK_ALGO_SLH_DSA_SHAKE_256F = 0x66; // experimental / private-use
 
 // ── Passphrase-based key encryption ────────────────────────────────
 const PBKDF2_ITERATIONS = 100000;
@@ -110,7 +111,7 @@ function buildV6PublicKeyPacketBody(
   return concat(
     new Uint8Array([V6_VERSION]),
     uint32BE(creationTimestamp),
-    new Uint8Array([PK_ALGO_SLH_DSA_SHA2_256F]),
+    new Uint8Array([PK_ALGO_SLH_DSA_SHAKE_256F]),
     uint32BE(publicKey.length),
     publicKey
   );
@@ -267,8 +268,8 @@ ${commentBlock}${encLine}
 // ═══════════════════════════════════════════════════════════════════
 
 export async function generateKeyPair(userId: string, passphrase?: string): Promise<KeyPair> {
-  // Generate real SLH-DSA-SHA2-256f key pair (FIPS 205, fast variant)
-  const { publicKey: slhPk, secretKey: slhSk } = slh_dsa_sha2_256f.keygen();
+  // Generate real SLH-DSA-SHAKE-256f key pair (FIPS 205, fast variant)
+  const { publicKey: slhPk, secretKey: slhSk } = slh_dsa_shake_256f.keygen();
 
   // Build v6 Public Key packet body (RFC 9580 Section 5.5.2.3)
   const createdAt = new Date();
@@ -398,11 +399,11 @@ function createClearSignedMessage(signedMessageContent: string, signatureBlock: 
 }
 
 /**
- * Sign a message with SLH-DSA-SHA2-256f per RFC 9580 v6 profile:
+ * Sign a message with SLH-DSA-SHAKE-256f per RFC 9580 v6 profile:
  *   1. Prepend key identity comment headers to the message
  *   2. Generate 32-byte random salt (RFC 9580 Section 5.2.3, Table 23)
  *   3. Compute digest = SHA3-512(salt || message_bytes) (RFC 9580 Section 5.2.4)
- *   4. Sign the digest with SLH-DSA-SHA2-256f (FIPS 205)
+ *   4. Sign the digest with SLH-DSA-SHAKE-256f (FIPS 205)
  *
  * Returns:
  *   - clearSignedMessage: combined PGP clearsign block (primary output)
@@ -427,7 +428,7 @@ export function sign(
   const digest = computeV6MessageDigest(salt, messageBytes);
 
   // FIPS 205: sign(message_digest, secret_key)
-  const signatureBytes = slh_dsa_sha2_256f.sign(digest, secretKey);
+  const signatureBytes = slh_dsa_shake_256f.sign(digest, secretKey);
   const signatureBlock = createPgpSignatureBlock(signatureBytes, salt, keyInfo);
 
   // Combined clearsign format: comments + message + signature in one block
@@ -441,7 +442,7 @@ export function sign(
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Verify a signature against a message with SLH-DSA-SHA2-256f.
+ * Verify a signature against a message with SLH-DSA-SHAKE-256f.
  *
  * The signatureBase64 armor body contains: salt(32) || signature(49856).
  * The message should include the prepended key identity comment headers
@@ -450,7 +451,7 @@ export function sign(
  * Verification:
  *   1. Extract salt and signature from the armor payload
  *   2. Recompute digest = SHA3-512(salt || message_bytes)
- *   3. Verify with SLH-DSA-SHA2-256f
+ *   3. Verify with SLH-DSA-SHAKE-256f
  */
 /**
  * Extract the raw SLH-DSA public key from a v6 Public Key packet body.
@@ -485,7 +486,7 @@ export function verify(
     const digest = computeV6MessageDigest(salt, messageBytes);
 
     // FIPS 205: verify(signature, message_digest, public_key)
-    return slh_dsa_sha2_256f.verify(signatureBytes, digest, publicKey);
+    return slh_dsa_shake_256f.verify(signatureBytes, digest, publicKey);
   } catch (error) {
     console.error('Verification failed:', error);
     return false;
