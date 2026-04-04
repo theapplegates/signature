@@ -38,26 +38,23 @@ function base64ToBytes(b64: string): Uint8Array {
  *   -----END PGP SIGNATURE-----
  */
 function parseClearSignedMessage(input: string): { message: string; signatureBlock: string } | null {
-    // Normalize line endings (Windows \r\n → \n) so header boundary detection works reliably
-    const normalized = input.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
     const SIGNED_MSG_HEADER = '-----BEGIN PGP SIGNED MESSAGE-----';
     const SIG_START = '-----BEGIN PGP SIGNATURE-----';
 
-    if (!normalized.includes(SIGNED_MSG_HEADER) || !normalized.includes(SIG_START)) {
+    if (!input.includes(SIGNED_MSG_HEADER) || !input.includes(SIG_START)) {
         return null;
     }
 
     // The message content starts after the first blank line following the header block.
-    const headerEnd = normalized.indexOf('\n\n', normalized.indexOf(SIGNED_MSG_HEADER));
-    const sigStartIdx = normalized.indexOf(SIG_START);
+    const headerEnd = input.indexOf('\n\n', input.indexOf(SIGNED_MSG_HEADER));
+    const sigStartIdx = input.indexOf(SIG_START);
 
     if (headerEnd === -1 || sigStartIdx === -1 || headerEnd >= sigStartIdx) {
         return null;
     }
 
-    const message = normalized.slice(headerEnd + 2, sigStartIdx).trimEnd();
-    const signatureBlock = normalized.slice(sigStartIdx);
+    const message = input.slice(headerEnd + 2, sigStartIdx).trimEnd();
+    const signatureBlock = input.slice(sigStartIdx);
     return { message, signatureBlock };
 }
 
