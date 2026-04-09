@@ -2,13 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { KeyManagementTab } from './components/KeyManagementTab';
 import { SignTab } from './components/SignTab';
 import { VerifyTab } from './components/VerifyTab';
+import { EncryptTab } from './components/EncryptTab';
+import { DecryptTab } from './components/DecryptTab';
 import { KeyDetailsModal } from './components/KeyDetailsModal';
 import { TabButton } from './components/TabButton';
 import { generateKeyPair as generate } from './services/cryptoService';
 import type { KeyPair, Tab } from './types';
-import { TABS } from './constants';
-// FIX: Remove unused LockIcon import as it's not exported from the Icons module.
-import { KeyIcon, PencilIcon, CheckBadgeIcon, QuestionIcon, ExclamationTriangleIcon } from './components/icons/Icons';
+import { TABS, CRYPTO_PROFILE } from './constants';
+import { KeyIcon, PencilIcon, CheckBadgeIcon, QuestionIcon, ExclamationTriangleIcon, LockClosedIcon, LockOpenIcon } from './components/icons/Icons';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(TABS.KEY_MANAGEMENT);
@@ -70,6 +71,10 @@ const App: React.FC = () => {
         return <SignTab keys={keys} />;
       case TABS.VERIFY:
         return <VerifyTab />;
+      case TABS.ENCRYPT:
+        return <EncryptTab keys={keys} />;
+      case TABS.DECRYPT:
+        return <DecryptTab keys={keys} />;
       default:
         return <div className="p-6 bg-white rounded-lg shadow-md "><p>Select a feature above to get started.</p></div>;
     }
@@ -80,6 +85,8 @@ const App: React.FC = () => {
         case TABS.KEY_MANAGEMENT: return <KeyIcon />;
         case TABS.SIGN: return <PencilIcon />;
         case TABS.VERIFY: return <CheckBadgeIcon />;
+        case TABS.ENCRYPT: return <LockClosedIcon />;
+        case TABS.DECRYPT: return <LockOpenIcon />;
         default: return <QuestionIcon />;
     }
   };
@@ -89,7 +96,7 @@ const App: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <header className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900">Winternitz Signature Toolkit</h1>
-          <p className="text-lg text-gray-600 mt-1">Using SLH-DSA-SHA2-256f with Winternitz one-time signature chains for post-quantum signing</p>
+          <p className="text-lg text-gray-600 mt-1">Using {CRYPTO_PROFILE.primaryAlgorithm} with {CRYPTO_PROFILE.subkeyAlgorithm} for post-quantum signing and encryption</p>
         </header>
 
         <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded-md shadow-sm mb-8" role="alert">
@@ -97,7 +104,7 @@ const App: React.FC = () => {
             <div className="py-1"><ExclamationTriangleIcon/></div>
             <div className="ml-3">
               <p className="font-bold">Important Note</p>
-              <p className="text-sm">This application uses the <code className="bg-yellow-100 px-1 rounded">@noble/post-quantum</code> library for SLH-DSA-SHA2-256f (FIPS 205) cryptographic operations following the OpenPGP v6 profile (RFC 9580). SLH-DSA is a stateless hash-based signature system built from Winternitz one-time signatures and Merkle trees. Key fingerprints use SHA-256; message digests use SHA3-512 with a 32-byte random salt per RFC 9580 Section 5.2.4. These operations are computationally intensive and may cause your browser to become unresponsive temporarily during key generation or signing.</p>
+              <p className="text-sm">This application uses the <code className="bg-yellow-100 px-1 rounded">@noble/post-quantum</code> library for {CRYPTO_PROFILE.primaryAlgorithm} ({CRYPTO_PROFILE.primaryCategory}) signing and {CRYPTO_PROFILE.subkeyAlgorithm} ({CRYPTO_PROFILE.subkeyCategory}) encryption under the {CRYPTO_PROFILE.keyVersion} profile. Key fingerprints use SHA-256; signature hashing uses {CRYPTO_PROFILE.hashAlgorithm} (ID {CRYPTO_PROFILE.hashId}). These operations are computationally intensive and may cause your browser to become temporarily unresponsive during key generation, signing, encryption, or decryption.</p>
             </div>
           </div>
         </div>
