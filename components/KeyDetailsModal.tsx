@@ -62,6 +62,7 @@ export const KeyDetailsModal: React.FC<Props> = ({ keyPair, onClose }) => {
     () => analyzePublicKeyCompatibility(keyPair.publicKeyPgp),
     [keyPair.publicKeyPgp]
   );
+  const hasInfoNotes = compatibilityReport.checks.some(check => check.severity === 'info');
 
   const reportStyle = compatibilityReport.overall === 'fail'
     ? 'bg-red-50 border-l-4 border-red-400 text-red-800'
@@ -73,7 +74,9 @@ export const KeyDetailsModal: React.FC<Props> = ({ keyPair, onClose }) => {
     ? 'Compatibility Check: FAIL'
     : compatibilityReport.overall === 'warn'
       ? 'Compatibility Check: WARNINGS'
-      : 'Compatibility Check: PASS';
+      : hasInfoNotes
+        ? 'Compatibility Check: PASS (NOTES)'
+        : 'Compatibility Check: PASS';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -125,7 +128,7 @@ export const KeyDetailsModal: React.FC<Props> = ({ keyPair, onClose }) => {
                     <ul className="mt-2 text-sm space-y-1 list-disc list-inside">
                       {compatibilityReport.checks.map((check, index) => (
                         <li key={`${check.message}-${index}`}>
-                          [{check.severity.toUpperCase()}] {check.message}
+                          [{check.severity === 'info' ? 'NOTE' : check.severity.toUpperCase()}] {check.message}
                         </li>
                       ))}
                     </ul>

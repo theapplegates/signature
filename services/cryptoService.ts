@@ -270,7 +270,7 @@ function extractBase64FromPgpBlock(pgpBlock: string): string {
   return base64Lines.join('');
 }
 
-export type CompatibilitySeverity = 'pass' | 'warn' | 'fail';
+export type CompatibilitySeverity = 'pass' | 'warn' | 'fail' | 'info';
 
 export interface CompatibilityCheckItem {
   severity: CompatibilitySeverity;
@@ -422,7 +422,7 @@ export function analyzePublicKeyCompatibility(publicKeyPgp: string): PublicKeyCo
     addCheck('pass', `Signature packets present (${signaturePackets.length}).`);
   }
 
-  addCheck('warn', 'Some validators and legacy OpenPGP tools may still reject RFC 9580 + PQ algorithm IDs.');
+  addCheck('info', 'Note: some validators and legacy OpenPGP tools may still reject RFC 9580 + PQ algorithm IDs.');
 
   return { overall, checks };
 }
