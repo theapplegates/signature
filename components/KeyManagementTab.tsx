@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { KeyPair } from '../types';
 import { KeyIcon, InformationCircleIcon } from './icons/Icons';
+import { CRYPTO_PROFILE } from '../constants';
 
 interface Props {
   onGenerate: (userId: string, passphrase?: string) => void;
@@ -25,7 +26,12 @@ export const KeyManagementTab: React.FC<Props> = ({ onGenerate, keys, isGenerati
     <div className="space-y-8">
       <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
         <h2 className="text-2xl font-semibold text-gray-800 mb-1">Generate New Key Pair</h2>
-        <p className="text-gray-500 mb-6">Algorithm: <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">SLH-DSA-SHA2-256f</span> (Winternitz-based, FIPS 205 fast variant)</p>
+        <p className="text-gray-500 mb-2">
+          Primary: <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">{CRYPTO_PROFILE.primaryAlgorithm}</span> ({CRYPTO_PROFILE.primaryCategory})
+        </p>
+        <p className="text-gray-500 mb-6">
+          Subkey: <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">{CRYPTO_PROFILE.subkeyAlgorithm}</span> ({CRYPTO_PROFILE.subkeyCategory})
+        </p>
 
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>

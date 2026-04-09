@@ -63,3 +63,15 @@ export const CheckCircleIcon: React.FC = () => (
         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
     </svg>
 );
+
+export const LockClosedIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" {...iconProps} aria-hidden="true">
+        <path fillRule="evenodd" d="M5 8a3 3 0 116 0v1h1a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4a2 2 0 012-2h1V8zm2 1V8a1 1 0 112 0v1H7z" clipRule="evenodd" />
+    </svg>
+);
+
+export const LockOpenIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" {...iconProps} aria-hidden="true">
+        <path fillRule="evenodd" d="M9 8a3 3 0 10-6 0v1h2V8a1 1 0 112 0v1h5a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4a2 2 0 012-2h5V8z" clipRule="evenodd" />
+    </svg>
+);
