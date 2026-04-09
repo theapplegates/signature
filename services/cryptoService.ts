@@ -31,8 +31,20 @@ const ENCRYPTED_PACKET_VERSION = 1;
 // ── RFC 9580 v6 constants ──────────────────────────────────────────
 const V6_VERSION = 6;
 const V6_SALT_SIZE = 32; // SHA3-512 salt size (RFC 9580 Table 23)
-// Algorithm ID for SLH-DSA-SHAKE-256s — currently private/experimental.
-const PK_ALGO_SLH_DSA_SHAKE_256S = 0x66;
+const HASH_ALGO_SHA3_512 = 0x0e;
+// RFC 9580-aligned PQ algorithm IDs used by current experimental implementations.
+const PK_ALGO_SLH_DSA_SHAKE_256S = 0x22;
+const PK_ALGO_ML_KEM_1024_X448 = 0x24;
+const KEY_FLAGS_CERTIFY_AND_SIGN = 0x03;
+const KEY_FLAGS_TRANSPORT_AND_STORAGE_ENCRYPT = 0x0c;
+
+const TAG_SIGNATURE = 2;
+const TAG_PUBLIC_KEY = 6;
+const TAG_USER_ID = 13;
+const TAG_PUBLIC_SUBKEY = 14;
+
+const SIG_TYPE_POSITIVE_CERTIFICATION = 0x13;
+const SIG_TYPE_SUBKEY_BINDING = 0x18;
 
 // ── Passphrase-based key encryption ────────────────────────────────
 const PBKDF2_ITERATIONS = 100000;
@@ -152,6 +164,67 @@ function unwrapOpenPgpNewPacket(packetBytes: Uint8Array): { tag: number; body: U
   return { tag, body: packetBytes.slice(bodyOffset, bodyEnd) };
 }
 
+type ParsedOpenPgpPacket = {
+  tag: number;
+  body: Uint8Array;
+  raw: Uint8Array;
+};
+
+function parseOpenPgpNewPacketStream(packetBytes: Uint8Array): ParsedOpenPgpPacket[] {
+  const packets: ParsedOpenPgpPacket[] = [];
+  let offset = 0;
+
+  while (offset < packetBytes.length) {
+    if (packetBytes.length - offset < 2) {
+      throw new Error('OpenPGP packet stream is truncated.');
+    }
+
+    const ctb = packetBytes[offset];
+    if ((ctb & 0x80) === 0) {
+      throw new Error(`Invalid OpenPGP packet header byte 0x${ctb.toString(16)} at offset ${offset}.`);
+    }
+    if ((ctb & 0x40) === 0) {
+      throw new Error('Old-format OpenPGP headers are not supported by this parser.');
+    }
+
+    const tag = ctb & 0x3f;
+    const firstLength = packetBytes[offset + 1];
+
+    let bodyLength = 0;
+    let headerLength = 2;
+
+    if (firstLength < 192) {
+      bodyLength = firstLength;
+    } else if (firstLength >= 192 && firstLength <= 223) {
+      if (packetBytes.length - offset < 3) throw new Error('OpenPGP packet stream is truncated.');
+      bodyLength = ((firstLength - 192) << 8) + packetBytes[offset + 2] + 192;
+      headerLength = 3;
+    } else if (firstLength === 255) {
+      if (packetBytes.length - offset < 6) throw new Error('OpenPGP packet stream is truncated.');
+      bodyLength = uint32FromBE(packetBytes.slice(offset + 2, offset + 6));
+      headerLength = 6;
+    } else {
+      throw new Error('Partial-length OpenPGP packets are not supported by this parser.');
+    }
+
+    const bodyStart = offset + headerLength;
+    const bodyEnd = bodyStart + bodyLength;
+    if (bodyEnd > packetBytes.length) {
+      throw new Error('OpenPGP packet stream body is truncated.');
+    }
+
+    packets.push({
+      tag,
+      body: packetBytes.slice(bodyStart, bodyEnd),
+      raw: packetBytes.slice(offset, bodyEnd),
+    });
+
+    offset = bodyEnd;
+  }
+
+  return packets;
+}
+
 function concat(...arrays: Uint8Array[]): Uint8Array {
   const totalLen = arrays.reduce((s, a) => s + a.length, 0);
   const out = new Uint8Array(totalLen);
@@ -244,67 +317,109 @@ export function analyzePublicKeyCompatibility(publicKeyPgp: string): PublicKeyCo
     return { overall, checks };
   }
 
-  let packetBody: Uint8Array;
-  let packetTag: number | null = null;
+  if ((packetBytes[0] & 0x80) === 0) {
+    addCheck('warn', 'No packet header found; this looks like legacy raw packet-body export.');
+  } else {
+    addCheck('pass', 'OpenPGP packet framing is present.');
+  }
 
+  let packets: ParsedOpenPgpPacket[] = [];
   if ((packetBytes[0] & 0x80) !== 0) {
     try {
-      const parsed = unwrapOpenPgpNewPacket(packetBytes);
-      packetTag = parsed.tag;
-      packetBody = parsed.body;
-      addCheck('pass', `OpenPGP packet framing is present (tag ${packetTag}).`);
+      packets = parseOpenPgpNewPacketStream(packetBytes);
+      addCheck('pass', `Parsed ${packets.length} OpenPGP packet(s).`);
     } catch (error) {
       addCheck('fail', `OpenPGP packet framing is invalid: ${(error as Error).message}`);
       return { overall, checks };
     }
   } else {
-    packetBody = packetBytes;
-    addCheck('warn', 'No packet header found; this looks like legacy raw packet-body export.');
+    packets = [{ tag: TAG_PUBLIC_KEY, body: packetBytes, raw: packetBytes }];
   }
 
-  if (packetTag !== null && packetTag !== 6) {
-    addCheck('fail', `Expected public-key packet tag 6, found tag ${packetTag}.`);
+  const primaryPacket = packets[0];
+  if (!primaryPacket || primaryPacket.tag !== TAG_PUBLIC_KEY) {
+    addCheck('fail', `Expected first packet to be tag ${TAG_PUBLIC_KEY} (public key).`);
     return { overall, checks };
   }
-  if (packetTag === 6) {
-    addCheck('pass', 'Public-key packet tag is correct (6).');
-  }
+  addCheck('pass', 'Primary public-key packet is present (tag 6).');
 
+  const packetBody = primaryPacket.body;
   if (packetBody.length < 10) {
     addCheck('fail', `Public-key packet body is too short (${packetBody.length} bytes).`);
     return { overall, checks };
   }
 
   const version = packetBody[0];
-  if (version !== 6) {
-    addCheck('fail', `Key packet version is ${version}; expected v6.`);
+  if (version !== V6_VERSION) {
+    addCheck('fail', `Key packet version is ${version}; expected v${V6_VERSION}.`);
     return { overall, checks };
   }
   addCheck('pass', 'Key packet version is v6 (RFC 9580).');
 
   const algorithmId = packetBody[5];
   if (algorithmId !== PK_ALGO_SLH_DSA_SHAKE_256S) {
-    addCheck('warn', `Public-key algorithm ID is 0x${algorithmId.toString(16)} (unexpected for this app).`);
+    addCheck('warn', `Primary key algorithm ID is 0x${algorithmId.toString(16)} (unexpected for this app profile).`);
   } else {
-    addCheck('pass', `Public-key algorithm ID is 0x${algorithmId.toString(16)} (SLH-DSA-SHAKE-256s app profile).`);
+    addCheck('pass', `Primary key algorithm ID is 0x${algorithmId.toString(16)} (SLH-DSA-SHAKE-256s).`);
   }
 
   const keyLength = uint32FromBE(packetBody.slice(6, 10));
   if (keyLength !== SLH_DSA_PK_BYTES) {
-    addCheck('fail', `Key material length is ${keyLength} bytes; expected ${SLH_DSA_PK_BYTES}.`);
+    addCheck('fail', `Primary key material length is ${keyLength} bytes; expected ${SLH_DSA_PK_BYTES}.`);
     return { overall, checks };
   }
-  addCheck('pass', `Key material length matches expected ${SLH_DSA_PK_BYTES} bytes.`);
+  addCheck('pass', `Primary key length is ${SLH_DSA_PK_BYTES} bytes.`);
 
   const expectedTotalBody = 10 + keyLength;
   if (packetBody.length < expectedTotalBody) {
-    addCheck('fail', 'Key material is truncated.');
+    addCheck('fail', 'Primary key material is truncated.');
     return { overall, checks };
   }
-  if (packetBody.length > expectedTotalBody) {
-    addCheck('warn', 'Extra data follows key material; parser will ignore trailing bytes.');
+  addCheck('pass', 'Primary key packet body length is internally consistent.');
+
+  const userIdPacket = packets.find(packet => packet.tag === TAG_USER_ID);
+  if (!userIdPacket) {
+    addCheck('warn', 'User ID packet (tag 13) is missing.');
   } else {
-    addCheck('pass', 'Packet body length is internally consistent.');
+    addCheck('pass', 'User ID packet (tag 13) is present.');
+  }
+
+  const subkeyPacket = packets.find(packet => packet.tag === TAG_PUBLIC_SUBKEY);
+  if (!subkeyPacket) {
+    addCheck('warn', 'Public subkey packet (tag 14) is missing.');
+  } else {
+    if (subkeyPacket.body.length < 10) {
+      addCheck('fail', 'Public subkey packet body is too short.');
+      return { overall, checks };
+    }
+
+    const subkeyVersion = subkeyPacket.body[0];
+    if (subkeyVersion !== V6_VERSION) {
+      addCheck('fail', `Subkey packet version is ${subkeyVersion}; expected v${V6_VERSION}.`);
+      return { overall, checks };
+    }
+
+    const subkeyAlgorithmId = subkeyPacket.body[5];
+    if (subkeyAlgorithmId !== PK_ALGO_ML_KEM_1024_X448) {
+      addCheck('warn', `Subkey algorithm ID is 0x${subkeyAlgorithmId.toString(16)} (unexpected for ML-KEM-1024+X448).`);
+    } else {
+      addCheck('pass', `Subkey algorithm ID is 0x${subkeyAlgorithmId.toString(16)} (ML-KEM-1024+X448).`);
+    }
+
+    const subkeyLength = uint32FromBE(subkeyPacket.body.slice(6, 10));
+    const expectedSubkeyLength = ML_KEM_PK_BYTES + X448_PUBLIC_BYTES;
+    if (subkeyLength !== expectedSubkeyLength) {
+      addCheck('fail', `Subkey material length is ${subkeyLength} bytes; expected ${expectedSubkeyLength}.`);
+      return { overall, checks };
+    }
+    addCheck('pass', `Subkey length is ${expectedSubkeyLength} bytes.`);
+  }
+
+  const signaturePackets = packets.filter(packet => packet.tag === TAG_SIGNATURE);
+  if (signaturePackets.length < 2) {
+    addCheck('warn', `Only ${signaturePackets.length} signature packet(s) found; full cert exports typically include self-signatures.`);
+  } else {
+    addCheck('pass', `Signature packets present (${signaturePackets.length}).`);
   }
 
   addCheck('warn', 'Some validators and legacy OpenPGP tools may still reject RFC 9580 + PQ algorithm IDs.');
@@ -318,12 +433,13 @@ export function analyzePublicKeyCompatibility(publicKeyPgp: string): PublicKeyCo
 
 function buildV6PublicKeyPacketBody(
   creationTimestamp: number,
+  algorithmId: number,
   publicKey: Uint8Array
 ): Uint8Array {
   return concat(
     new Uint8Array([V6_VERSION]),
     uint32BE(creationTimestamp),
-    new Uint8Array([PK_ALGO_SLH_DSA_SHAKE_256S]),
+    new Uint8Array([algorithmId]),
     uint32BE(publicKey.length),
     publicKey
   );
@@ -339,7 +455,7 @@ function computeV6Fingerprint(packetBody: Uint8Array): Uint8Array {
 }
 
 function formatFingerprint(fpBytes: Uint8Array): string {
-  return bytesToHex(fpBytes.slice(0, 20))
+  return bytesToHex(fpBytes)
     .toUpperCase()
     .match(/.{4}/g)
     ?.join(' ') || '';
@@ -352,6 +468,72 @@ function formatFingerprint(fpBytes: Uint8Array): string {
 function computeV6MessageDigest(salt: Uint8Array, messageBytes: Uint8Array): Uint8Array {
   const hashInput = concat(salt, messageBytes);
   return sha3_512(hashInput);
+}
+
+function encodeSubpacketLength(length: number): Uint8Array {
+  if (length < 192) {
+    return new Uint8Array([length]);
+  }
+  if (length <= 8383) {
+    const n = length - 192;
+    return new Uint8Array([((n >> 8) & 0xff) + 192, n & 0xff]);
+  }
+  throw new Error('Signature subpacket is too large.');
+}
+
+function buildSignatureSubpacket(type: number, data: Uint8Array): Uint8Array {
+  const lengthBytes = encodeSubpacketLength(1 + data.length);
+  return concat(lengthBytes, new Uint8Array([type]), data);
+}
+
+function buildV6SignaturePacketBody(
+  signatureType: number,
+  primaryPacketBody: Uint8Array,
+  signingSecretKey: Uint8Array,
+  fingerprintBytes: Uint8Array,
+  creationTimestamp: number,
+  contextData: Uint8Array,
+  keyFlags: number
+): Uint8Array {
+  const creationTimeSubpacket = buildSignatureSubpacket(2, uint32BE(creationTimestamp));
+  const keyFlagsSubpacket = buildSignatureSubpacket(27, new Uint8Array([keyFlags]));
+
+  const hashedSubpackets = signatureType === SIG_TYPE_POSITIVE_CERTIFICATION
+    ? concat(
+      creationTimeSubpacket,
+      keyFlagsSubpacket,
+      buildSignatureSubpacket(11, new Uint8Array([9])),
+      buildSignatureSubpacket(21, new Uint8Array([HASH_ALGO_SHA3_512])),
+      buildSignatureSubpacket(30, new Uint8Array([1]))
+    )
+    : concat(creationTimeSubpacket, keyFlagsSubpacket);
+
+  const unhashedSubpackets = buildSignatureSubpacket(33, concat(new Uint8Array([V6_VERSION]), fingerprintBytes));
+
+  const salt = crypto.getRandomValues(new Uint8Array(V6_SALT_SIZE));
+
+  const signatureHeader = concat(
+    new Uint8Array([V6_VERSION, signatureType, PK_ALGO_SLH_DSA_SHAKE_256S, HASH_ALGO_SHA3_512, salt.length]),
+    salt,
+    uint32BE(hashedSubpackets.length),
+    hashedSubpackets,
+    uint32BE(unhashedSubpackets.length),
+    unhashedSubpackets
+  );
+
+  const dataToSign = concat(
+    new TextEncoder().encode('OPENPGP-V6-PQ-CERT'),
+    new Uint8Array([signatureType]),
+    primaryPacketBody,
+    contextData,
+    signatureHeader
+  );
+
+  const digest = computeV6MessageDigest(salt, dataToSign);
+  const signedDigestPrefix = digest.slice(0, 2);
+  const signatureBytes = slh_dsa_shake_256s.sign(digest, signingSecretKey);
+
+  return concat(signatureHeader, signedDigestPrefix, signatureBytes);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -495,17 +677,50 @@ function createPgpPublicKeyBlock(
   userInfo: { name: string; email: string },
   fingerprint: string,
   validFrom: string,
-  v6PacketBody: Uint8Array
+  userId: string,
+  primaryPacketBody: Uint8Array,
+  primarySecretKey: Uint8Array,
+  subkeyPacketBody: Uint8Array,
+  fingerprintBytes: Uint8Array,
+  creationTimestamp: number
 ): string {
-  // Armor full OpenPGP packet bytes, not just the packet body.
-  const publicKeyPacket = wrapOpenPgpNewPacket(6, v6PacketBody);
+  const userIdBytes = new TextEncoder().encode(userId);
+
+  const selfCertificationSignatureBody = buildV6SignaturePacketBody(
+    SIG_TYPE_POSITIVE_CERTIFICATION,
+    primaryPacketBody,
+    primarySecretKey,
+    fingerprintBytes,
+    creationTimestamp,
+    userIdBytes,
+    KEY_FLAGS_CERTIFY_AND_SIGN
+  );
+
+  const subkeyBindingSignatureBody = buildV6SignaturePacketBody(
+    SIG_TYPE_SUBKEY_BINDING,
+    primaryPacketBody,
+    primarySecretKey,
+    fingerprintBytes,
+    creationTimestamp,
+    subkeyPacketBody,
+    KEY_FLAGS_TRANSPORT_AND_STORAGE_ENCRYPT
+  );
+
+  const packetBundle = concat(
+    wrapOpenPgpNewPacket(TAG_PUBLIC_KEY, primaryPacketBody),
+    wrapOpenPgpNewPacket(TAG_USER_ID, userIdBytes),
+    wrapOpenPgpNewPacket(TAG_SIGNATURE, selfCertificationSignatureBody),
+    wrapOpenPgpNewPacket(TAG_PUBLIC_SUBKEY, subkeyPacketBody),
+    wrapOpenPgpNewPacket(TAG_SIGNATURE, subkeyBindingSignatureBody)
+  );
+
   const header = `-----BEGIN PGP PUBLIC KEY BLOCK-----
 Version: OpenPGP v6 (RFC 9580)
 Hash: ${CRYPTO_PROFILE.hashAlgorithm}
 ${buildKeyCommentBlock(userInfo, fingerprint, validFrom, false)}
 `;
   const footer = `-----END PGP PUBLIC KEY BLOCK-----`;
-  return `${header}\n${base64WithLineBreaks(publicKeyPacket)}\n${footer}`;
+  return `${header}\n${base64WithLineBreaks(packetBundle)}\n${footer}`;
 }
 
 function createPgpPrivateKeyBlock(
@@ -560,15 +775,35 @@ export async function generateKeyPair(userId: string, passphrase?: string): Prom
 
   const createdAt = new Date();
   const creationTimestamp = Math.floor(createdAt.getTime() / 1000);
-  const v6PkBody = buildV6PublicKeyPacketBody(creationTimestamp, slhPk);
+  const primaryPublicKeyPacketBody = buildV6PublicKeyPacketBody(
+    creationTimestamp,
+    PK_ALGO_SLH_DSA_SHAKE_256S,
+    slhPk
+  );
+  const subkeyMaterial = concat(kemPk, x448Pk);
+  const subkeyPacketBody = buildV6PublicKeyPacketBody(
+    creationTimestamp,
+    PK_ALGO_ML_KEM_1024_X448,
+    subkeyMaterial
+  );
 
-  const fpBytes = computeV6Fingerprint(v6PkBody);
+  const fpBytes = computeV6Fingerprint(primaryPublicKeyPacketBody);
   const fingerprint = formatFingerprint(fpBytes);
 
   const validFrom = createdAt.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
   const userInfo = parseUserId(userId);
 
-  const publicKeyPgp = createPgpPublicKeyBlock(userInfo, fingerprint, validFrom, v6PkBody);
+  const publicKeyPgp = createPgpPublicKeyBlock(
+    userInfo,
+    fingerprint,
+    validFrom,
+    userId,
+    primaryPublicKeyPacketBody,
+    slhSk,
+    subkeyPacketBody,
+    fpBytes,
+    creationTimestamp
+  );
 
   let privateKeyRaw: string;
   let privateKeyPgp: string;

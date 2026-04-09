@@ -104,7 +104,7 @@ const App: React.FC = () => {
             <div className="py-1"><ExclamationTriangleIcon/></div>
             <div className="ml-3">
               <p className="font-bold">Important Note</p>
-              <p className="text-sm">This application uses the <code className="bg-yellow-100 px-1 rounded">@noble/post-quantum</code> library for {CRYPTO_PROFILE.primaryAlgorithm} ({CRYPTO_PROFILE.primaryCategory}) signing and {CRYPTO_PROFILE.subkeyAlgorithm} ({CRYPTO_PROFILE.subkeyCategory}) encryption under the {CRYPTO_PROFILE.keyVersion} profile. Key fingerprints use SHA-256; signature hashing uses {CRYPTO_PROFILE.hashAlgorithm} (ID {CRYPTO_PROFILE.hashId}). Key generation includes strict cryptographic self-tests to ensure generated keys are valid before they are saved, so generation can take noticeably longer.</p>
+              <p className="text-sm">This application uses the <code className="bg-yellow-100 px-1 rounded">@noble/post-quantum</code> library for {CRYPTO_PROFILE.primaryAlgorithm} ({CRYPTO_PROFILE.primaryCategory}) signing and {CRYPTO_PROFILE.subkeyAlgorithm} ({CRYPTO_PROFILE.subkeyCategory}) encryption under the {CRYPTO_PROFILE.keyVersion} profile. Key fingerprints use SHA-256; signature hashing uses {CRYPTO_PROFILE.hashAlgorithm} (ID {CRYPTO_PROFILE.hashId}). Key generation includes strict cryptographic self-tests plus large v6 certification signatures, so generation can take noticeably longer.</p>
             </div>
           </div>
         </div>
