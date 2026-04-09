@@ -48,6 +48,21 @@ function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let index = 0; index < a.length; index++) {
+    diff |= a[index] ^ b[index];
+  }
+  return diff === 0;
+}
+
+function assertLength(bytes: Uint8Array, expected: number, label: string): void {
+  if (bytes.length !== expected) {
+    throw new Error(`${label} has invalid length: expected ${expected}, got ${bytes.length}`);
+  }
+}
+
 export function hexToBytes(hex: string): Uint8Array {
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
@@ -200,6 +215,72 @@ async function deriveHybridAesKey(mlKemSharedSecret: Uint8Array, x448SharedSecre
   return crypto.subtle.importKey('raw', aesKeyBytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
 
+async function runKeySelfTests(
+  slhPk: Uint8Array,
+  slhSk: Uint8Array,
+  kemPk: Uint8Array,
+  kemSk: Uint8Array,
+  x448Pk: Uint8Array,
+  x448Sk: Uint8Array
+): Promise<void> {
+  assertLength(slhPk, SLH_DSA_PK_BYTES, 'SLH-DSA public key');
+  assertLength(slhSk, SLH_DSA_SK_BYTES, 'SLH-DSA secret key');
+  assertLength(kemPk, ML_KEM_PK_BYTES, 'ML-KEM public key');
+  assertLength(kemSk, ML_KEM_SK_BYTES, 'ML-KEM secret key');
+  assertLength(x448Pk, X448_PUBLIC_BYTES, 'X448 public key');
+  assertLength(x448Sk, X448_SECRET_BYTES, 'X448 secret key');
+
+  const derivedSphincsPk = slh_dsa_shake_256s.getPublicKey(slhSk);
+  if (!bytesEqual(derivedSphincsPk, slhPk)) {
+    throw new Error('SLH-DSA key pair self-test failed: derived public key mismatch.');
+  }
+
+  const signTestDigest = computeV6MessageDigest(
+    crypto.getRandomValues(new Uint8Array(V6_SALT_SIZE)),
+    new TextEncoder().encode('slh-dsa-shake-256s-key-self-test')
+  );
+  const signTestSig = slh_dsa_shake_256s.sign(signTestDigest, slhSk);
+  if (!slh_dsa_shake_256s.verify(signTestSig, signTestDigest, slhPk)) {
+    throw new Error('SLH-DSA key pair self-test failed: sign/verify mismatch.');
+  }
+
+  const { cipherText: kemCt, sharedSecret: kemSharedSecret } = ml_kem1024.encapsulate(kemPk);
+  const kemRecoveredSecret = ml_kem1024.decapsulate(kemCt, kemSk);
+  if (!bytesEqual(kemSharedSecret, kemRecoveredSecret)) {
+    throw new Error('ML-KEM key pair self-test failed: encapsulation mismatch.');
+  }
+
+  const derivedX448Pk = x448.getPublicKey(x448Sk);
+  if (!bytesEqual(derivedX448Pk, x448Pk)) {
+    throw new Error('X448 key pair self-test failed: derived public key mismatch.');
+  }
+
+  const ephemeralX448Sk = crypto.getRandomValues(new Uint8Array(X448_SECRET_BYTES));
+  const ephemeralX448Pk = x448.getPublicKey(ephemeralX448Sk);
+  const x448Shared1 = x448.getSharedSecret(ephemeralX448Sk, x448Pk);
+  const x448Shared2 = x448.getSharedSecret(x448Sk, ephemeralX448Pk);
+  if (!bytesEqual(x448Shared1, x448Shared2)) {
+    throw new Error('X448 key pair self-test failed: shared secret mismatch.');
+  }
+
+  const hybridKey = await deriveHybridAesKey(kemSharedSecret, x448Shared1);
+  const iv = crypto.getRandomValues(new Uint8Array(AES_GCM_IV_BYTES));
+  const plaintext = new TextEncoder().encode('hybrid-encryption-self-test');
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: ENCRYPTION_AAD },
+    hybridKey,
+    plaintext
+  );
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv, additionalData: ENCRYPTION_AAD },
+    hybridKey,
+    encrypted
+  );
+  if (!bytesEqual(new Uint8Array(decrypted), plaintext)) {
+    throw new Error('Hybrid encryption self-test failed: decrypt mismatch.');
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  User-ID Parsing & PGP Armor Comment Blocks
 // ═══════════════════════════════════════════════════════════════════
@@ -284,20 +365,19 @@ Comment: Recipient Fingerprint:\t${recipientFingerprint}
 
 export async function generateKeyPair(userId: string, passphrase?: string): Promise<KeyPair> {
   const { publicKey: slhPk, secretKey: slhSk } = slh_dsa_shake_256s.keygen();
-  if (slhPk.length !== SLH_DSA_PK_BYTES || slhSk.length !== SLH_DSA_SK_BYTES) {
-    throw new Error('Unexpected SLH-DSA key length');
-  }
+  assertLength(slhPk, SLH_DSA_PK_BYTES, 'SLH-DSA public key');
+  assertLength(slhSk, SLH_DSA_SK_BYTES, 'SLH-DSA secret key');
 
   const { publicKey: kemPk, secretKey: kemSk } = ml_kem1024.keygen();
-  if (kemPk.length !== ML_KEM_PK_BYTES || kemSk.length !== ML_KEM_SK_BYTES) {
-    throw new Error('Unexpected ML-KEM key length');
-  }
+  assertLength(kemPk, ML_KEM_PK_BYTES, 'ML-KEM public key');
+  assertLength(kemSk, ML_KEM_SK_BYTES, 'ML-KEM secret key');
 
   const x448Sk = crypto.getRandomValues(new Uint8Array(X448_SECRET_BYTES));
   const x448Pk = x448.getPublicKey(x448Sk);
-  if (x448Pk.length !== X448_PUBLIC_BYTES) {
-    throw new Error('Unexpected X448 public key length');
-  }
+  assertLength(x448Pk, X448_PUBLIC_BYTES, 'X448 public key');
+
+  // Run deterministic self-tests so generated material is cryptographically usable.
+  await runKeySelfTests(slhPk, slhSk, kemPk, kemSk, x448Pk, x448Sk);
 
   const createdAt = new Date();
   const creationTimestamp = Math.floor(createdAt.getTime() / 1000);
@@ -378,6 +458,7 @@ export async function decryptPrivateKey(key: KeyPair, passphrase: string): Promi
   try {
     const derivedKey = await deriveKey(passphrase, saltBytes);
     const decrypted = await decryptBytes(ciphertext, derivedKey, ivBytes);
+    assertLength(decrypted, SLH_DSA_SK_BYTES, 'Decrypted SLH-DSA secret key');
     return bytesToHex(decrypted);
   } catch (error) {
     console.error('Decryption failed', error);
@@ -387,7 +468,11 @@ export async function decryptPrivateKey(key: KeyPair, passphrase: string): Promi
 
 export async function decryptKemPrivateKey(key: KeyPair, passphrase: string): Promise<string> {
   if (!key.kemPrivateKeyRaw) throw new Error('Key does not include ML-KEM private material. Regenerate the key pair.');
-  if (!key.salt) return key.kemPrivateKeyRaw;
+  if (!key.salt) {
+    const rawBytes = hexToBytes(key.kemPrivateKeyRaw);
+    assertLength(rawBytes, ML_KEM_SK_BYTES, 'ML-KEM secret key');
+    return key.kemPrivateKeyRaw;
+  }
   if (!key.kemIv) throw new Error('Key is missing ML-KEM IV. Regenerate the key pair.');
 
   const saltBytes = hexToBytes(key.salt);
@@ -397,6 +482,7 @@ export async function decryptKemPrivateKey(key: KeyPair, passphrase: string): Pr
   try {
     const derivedKey = await deriveKey(passphrase, saltBytes);
     const decrypted = await decryptBytes(ciphertext, derivedKey, ivBytes);
+    assertLength(decrypted, ML_KEM_SK_BYTES, 'Decrypted ML-KEM secret key');
     return bytesToHex(decrypted);
   } catch (error) {
     console.error('ML-KEM key decryption failed', error);
@@ -406,7 +492,11 @@ export async function decryptKemPrivateKey(key: KeyPair, passphrase: string): Pr
 
 export async function decryptX448PrivateKey(key: KeyPair, passphrase: string): Promise<string> {
   if (!key.x448PrivateKeyRaw) throw new Error('Key does not include X448 private material. Regenerate the key pair.');
-  if (!key.salt) return key.x448PrivateKeyRaw;
+  if (!key.salt) {
+    const rawBytes = hexToBytes(key.x448PrivateKeyRaw);
+    assertLength(rawBytes, X448_SECRET_BYTES, 'X448 secret key');
+    return key.x448PrivateKeyRaw;
+  }
   if (!key.x448Iv) throw new Error('Key is missing X448 IV. Regenerate the key pair.');
 
   const saltBytes = hexToBytes(key.salt);
@@ -416,6 +506,7 @@ export async function decryptX448PrivateKey(key: KeyPair, passphrase: string): P
   try {
     const derivedKey = await deriveKey(passphrase, saltBytes);
     const decrypted = await decryptBytes(ciphertext, derivedKey, ivBytes);
+    assertLength(decrypted, X448_SECRET_BYTES, 'Decrypted X448 secret key');
     return bytesToHex(decrypted);
   } catch (error) {
     console.error('X448 key decryption failed', error);
@@ -484,10 +575,13 @@ export async function encryptMessage(
   }
 
   const { cipherText: mlKemCipherText, sharedSecret: mlKemSharedSecret } = ml_kem1024.encapsulate(recipientKemPublicKey);
+  assertLength(mlKemCipherText, ML_KEM_CT_BYTES, 'ML-KEM ciphertext');
 
   const ephemeralX448Secret = crypto.getRandomValues(new Uint8Array(X448_SECRET_BYTES));
   const ephemeralX448Public = x448.getPublicKey(ephemeralX448Secret);
+  assertLength(ephemeralX448Public, X448_PUBLIC_BYTES, 'Ephemeral X448 public key');
   const x448SharedSecret = x448.getSharedSecret(ephemeralX448Secret, recipientX448PublicKey);
+  assertLength(x448SharedSecret, X448_SECRET_BYTES, 'X448 shared secret');
 
   const aesKey = await deriveHybridAesKey(mlKemSharedSecret, x448SharedSecret);
   const iv = crypto.getRandomValues(new Uint8Array(AES_GCM_IV_BYTES));
@@ -530,9 +624,14 @@ export async function decryptMessage(
   const base64Payload = extractBase64FromPgpBlock(pgpMessage);
   const packet = base64Decode(base64Payload);
   const { mlKemCipherText, ephemeralX448Public, iv, ciphertext } = parseEncryptedPacket(packet);
+  assertLength(mlKemCipherText, ML_KEM_CT_BYTES, 'ML-KEM ciphertext');
+  assertLength(ephemeralX448Public, X448_PUBLIC_BYTES, 'Ephemeral X448 public key');
+  assertLength(iv, AES_GCM_IV_BYTES, 'AES-GCM IV');
 
   const mlKemSharedSecret = ml_kem1024.decapsulate(mlKemCipherText, recipientKemPrivateKey);
+  assertLength(mlKemSharedSecret, 32, 'ML-KEM shared secret');
   const x448SharedSecret = x448.getSharedSecret(recipientX448PrivateKey, ephemeralX448Public);
+  assertLength(x448SharedSecret, X448_SECRET_BYTES, 'X448 shared secret');
 
   const aesKey = await deriveHybridAesKey(mlKemSharedSecret, x448SharedSecret);
 
@@ -589,9 +688,21 @@ function createClearSignedMessage(signedMessageContent: string, signatureBlock: 
 export function sign(
   privateKeyHex: string,
   message: string,
-  keyInfo: { userId: string; fingerprint: string; createdAt: string }
+  keyInfo: { userId: string; fingerprint: string; createdAt: string; publicKeyRaw?: string }
 ): { signature: string; signedMessage: string; clearSignedMessage: string } {
   const secretKey = hexToBytes(privateKeyHex);
+  assertLength(secretKey, SLH_DSA_SK_BYTES, 'SLH-DSA secret key');
+
+  const derivedPublicKey = slh_dsa_shake_256s.getPublicKey(secretKey);
+  assertLength(derivedPublicKey, SLH_DSA_PK_BYTES, 'Derived SLH-DSA public key');
+
+  if (keyInfo.publicKeyRaw) {
+    const expectedPublicKey = hexToBytes(keyInfo.publicKeyRaw);
+    assertLength(expectedPublicKey, SLH_DSA_PK_BYTES, 'Expected SLH-DSA public key');
+    if (!bytesEqual(derivedPublicKey, expectedPublicKey)) {
+      throw new Error('Signing key mismatch: private key does not match selected public key.');
+    }
+  }
 
   const signedMessage = buildSignedMessageContent(message, keyInfo);
   const messageBytes = new TextEncoder().encode(signedMessage);
@@ -615,7 +726,21 @@ export function sign(
  * Layout: version(1) || creation_time(4) || algorithm(1) || key_len(4) || key_material
  */
 export function extractRawPublicKeyFromV6Packet(packetBytes: Uint8Array): Uint8Array {
-  return packetBytes.slice(10);
+  if (packetBytes.length < 10) {
+    throw new Error('v6 public key packet is too short.');
+  }
+
+  const keyLength = uint32FromBE(packetBytes.slice(6, 10));
+  const keyStart = 10;
+  const keyEnd = keyStart + keyLength;
+
+  if (packetBytes.length < keyEnd) {
+    throw new Error('v6 public key packet key length is truncated.');
+  }
+
+  const rawKey = packetBytes.slice(keyStart, keyEnd);
+  assertLength(rawKey, SLH_DSA_PK_BYTES, 'Extracted SLH-DSA public key');
+  return rawKey;
 }
 
 export function verify(
@@ -625,6 +750,7 @@ export function verify(
 ): boolean {
   try {
     const publicKey = hexToBytes(publicKeyHex);
+    assertLength(publicKey, SLH_DSA_PK_BYTES, 'SLH-DSA public key');
     const messageBytes = new TextEncoder().encode(message);
 
     const payload = base64Decode(signatureBase64);
@@ -635,6 +761,10 @@ export function verify(
 
     const salt = payload.slice(0, V6_SALT_SIZE);
     const signatureBytes = payload.slice(V6_SALT_SIZE);
+    if (signatureBytes.length !== slh_dsa_shake_256s.lengths.signature) {
+      console.error(`Signature payload length mismatch: expected ${slh_dsa_shake_256s.lengths.signature}, got ${signatureBytes.length}`);
+      return false;
+    }
     const digest = computeV6MessageDigest(salt, messageBytes);
 
     return slh_dsa_shake_256s.verify(signatureBytes, digest, publicKey);

@@ -54,6 +54,7 @@ export const SignTab: React.FC<Props> = ({ keys }) => {
                 userId: selectedKey.userId,
                 fingerprint: selectedKey.fingerprint,
                 createdAt: selectedKey.createdAt,
+                publicKeyRaw: selectedKey.publicKeyRaw,
             });
             setSignature(result.signature);
             setSignedMessage(result.signedMessage);
