@@ -197,6 +197,121 @@ function extractBase64FromPgpBlock(pgpBlock: string): string {
   return base64Lines.join('');
 }
 
+export type CompatibilitySeverity = 'pass' | 'warn' | 'fail';
+
+export interface CompatibilityCheckItem {
+  severity: CompatibilitySeverity;
+  message: string;
+}
+
+export interface PublicKeyCompatibilityReport {
+  overall: CompatibilitySeverity;
+  checks: CompatibilityCheckItem[];
+}
+
+function mergeSeverity(current: CompatibilitySeverity, next: CompatibilitySeverity): CompatibilitySeverity {
+  if (current === 'fail' || next === 'fail') return 'fail';
+  if (current === 'warn' || next === 'warn') return 'warn';
+  return 'pass';
+}
+
+export function analyzePublicKeyCompatibility(publicKeyPgp: string): PublicKeyCompatibilityReport {
+  const checks: CompatibilityCheckItem[] = [];
+  let overall: CompatibilitySeverity = 'pass';
+
+  const addCheck = (severity: CompatibilitySeverity, message: string) => {
+    checks.push({ severity, message });
+    overall = mergeSeverity(overall, severity);
+  };
+
+  if (!publicKeyPgp.includes('-----BEGIN PGP PUBLIC KEY BLOCK-----') || !publicKeyPgp.includes('-----END PGP PUBLIC KEY BLOCK-----')) {
+    addCheck('fail', 'Missing PGP public key armor headers.');
+    return { overall, checks };
+  }
+  addCheck('pass', 'Armor headers are present.');
+
+  let packetBytes: Uint8Array;
+  try {
+    const payload = extractBase64FromPgpBlock(publicKeyPgp);
+    packetBytes = base64Decode(payload);
+    if (packetBytes.length === 0) {
+      addCheck('fail', 'Base64 payload decodes to zero bytes.');
+      return { overall, checks };
+    }
+    addCheck('pass', `Base64 payload decoded (${packetBytes.length} bytes).`);
+  } catch {
+    addCheck('fail', 'Base64 payload could not be decoded.');
+    return { overall, checks };
+  }
+
+  let packetBody: Uint8Array;
+  let packetTag: number | null = null;
+
+  if ((packetBytes[0] & 0x80) !== 0) {
+    try {
+      const parsed = unwrapOpenPgpNewPacket(packetBytes);
+      packetTag = parsed.tag;
+      packetBody = parsed.body;
+      addCheck('pass', `OpenPGP packet framing is present (tag ${packetTag}).`);
+    } catch (error) {
+      addCheck('fail', `OpenPGP packet framing is invalid: ${(error as Error).message}`);
+      return { overall, checks };
+    }
+  } else {
+    packetBody = packetBytes;
+    addCheck('warn', 'No packet header found; this looks like legacy raw packet-body export.');
+  }
+
+  if (packetTag !== null && packetTag !== 6) {
+    addCheck('fail', `Expected public-key packet tag 6, found tag ${packetTag}.`);
+    return { overall, checks };
+  }
+  if (packetTag === 6) {
+    addCheck('pass', 'Public-key packet tag is correct (6).');
+  }
+
+  if (packetBody.length < 10) {
+    addCheck('fail', `Public-key packet body is too short (${packetBody.length} bytes).`);
+    return { overall, checks };
+  }
+
+  const version = packetBody[0];
+  if (version !== 6) {
+    addCheck('fail', `Key packet version is ${version}; expected v6.`);
+    return { overall, checks };
+  }
+  addCheck('pass', 'Key packet version is v6 (RFC 9580).');
+
+  const algorithmId = packetBody[5];
+  if (algorithmId !== PK_ALGO_SLH_DSA_SHAKE_256S) {
+    addCheck('warn', `Public-key algorithm ID is 0x${algorithmId.toString(16)} (unexpected for this app).`);
+  } else {
+    addCheck('pass', `Public-key algorithm ID is 0x${algorithmId.toString(16)} (SLH-DSA-SHAKE-256s app profile).`);
+  }
+
+  const keyLength = uint32FromBE(packetBody.slice(6, 10));
+  if (keyLength !== SLH_DSA_PK_BYTES) {
+    addCheck('fail', `Key material length is ${keyLength} bytes; expected ${SLH_DSA_PK_BYTES}.`);
+    return { overall, checks };
+  }
+  addCheck('pass', `Key material length matches expected ${SLH_DSA_PK_BYTES} bytes.`);
+
+  const expectedTotalBody = 10 + keyLength;
+  if (packetBody.length < expectedTotalBody) {
+    addCheck('fail', 'Key material is truncated.');
+    return { overall, checks };
+  }
+  if (packetBody.length > expectedTotalBody) {
+    addCheck('warn', 'Extra data follows key material; parser will ignore trailing bytes.');
+  } else {
+    addCheck('pass', 'Packet body length is internally consistent.');
+  }
+
+  addCheck('warn', 'Some validators and legacy OpenPGP tools may still reject RFC 9580 + PQ algorithm IDs.');
+
+  return { overall, checks };
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  v6 OpenPGP Packet Construction (RFC 9580)
 // ═══════════════════════════════════════════════════════════════════

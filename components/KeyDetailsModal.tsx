@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { KeyPair } from '../types';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { CheckIcon, CopyIcon, ExclamationTriangleIcon, CheckCircleIcon, DownloadIcon } from './icons/Icons';
+import { analyzePublicKeyCompatibility } from '../services/cryptoService';
 
 interface Props {
   keyPair: KeyPair;
@@ -57,6 +58,23 @@ const KeyBlock: React.FC<{ title: string; content: string; filename: string }> =
 };
 
 export const KeyDetailsModal: React.FC<Props> = ({ keyPair, onClose }) => {
+  const compatibilityReport = useMemo(
+    () => analyzePublicKeyCompatibility(keyPair.publicKeyPgp),
+    [keyPair.publicKeyPgp]
+  );
+
+  const reportStyle = compatibilityReport.overall === 'fail'
+    ? 'bg-red-50 border-l-4 border-red-400 text-red-800'
+    : compatibilityReport.overall === 'warn'
+      ? 'bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800'
+      : 'bg-green-50 border-l-4 border-green-400 text-green-800';
+
+  const reportTitle = compatibilityReport.overall === 'fail'
+    ? 'Compatibility Check: FAIL'
+    : compatibilityReport.overall === 'warn'
+      ? 'Compatibility Check: WARNINGS'
+      : 'Compatibility Check: PASS';
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -96,6 +114,24 @@ export const KeyDetailsModal: React.FC<Props> = ({ keyPair, onClose }) => {
                 content={keyPair.publicKeyPgp}
                 filename={`public-key-${keyPair.fingerprint.replace(/\s/g, '').slice(-16)}.asc`} 
               />
+
+              <div className={`${reportStyle} p-4 rounded-md`}>
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <ExclamationTriangleIcon />
+                  </div>
+                  <div className="ml-3">
+                    <p className="font-bold">{reportTitle}</p>
+                    <ul className="mt-2 text-sm space-y-1 list-disc list-inside">
+                      {compatibilityReport.checks.map((check, index) => (
+                        <li key={`${check.message}-${index}`}>
+                          [{check.severity.toUpperCase()}] {check.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
               
               <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded-md">
                 <div className="flex items-center">
