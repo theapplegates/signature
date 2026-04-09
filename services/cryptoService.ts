@@ -90,6 +90,68 @@ function uint32FromBE(bytes: Uint8Array): number {
   );
 }
 
+function encodeNewPacketLength(length: number): Uint8Array {
+  if (length < 192) {
+    return new Uint8Array([length]);
+  }
+  if (length <= 8383) {
+    const n = length - 192;
+    return new Uint8Array([((n >> 8) & 0xff) + 192, n & 0xff]);
+  }
+  return new Uint8Array([255, (length >>> 24) & 0xff, (length >>> 16) & 0xff, (length >>> 8) & 0xff, length & 0xff]);
+}
+
+function wrapOpenPgpNewPacket(tag: number, body: Uint8Array): Uint8Array {
+  const headerByte = 0xc0 | (tag & 0x3f);
+  const lengthBytes = encodeNewPacketLength(body.length);
+  return concat(new Uint8Array([headerByte]), lengthBytes, body);
+}
+
+function unwrapOpenPgpNewPacket(packetBytes: Uint8Array): { tag: number; body: Uint8Array } {
+  if (packetBytes.length < 2) {
+    throw new Error('OpenPGP packet is too short.');
+  }
+  const ctb = packetBytes[0];
+  if ((ctb & 0x80) === 0) {
+    throw new Error('Invalid OpenPGP packet header.');
+  }
+  if ((ctb & 0x40) === 0) {
+    throw new Error('Old-format OpenPGP headers are not supported by this parser.');
+  }
+
+  const tag = ctb & 0x3f;
+  const firstLength = packetBytes[1];
+
+  let bodyLength: number;
+  let bodyOffset: number;
+
+  if (firstLength < 192) {
+    bodyLength = firstLength;
+    bodyOffset = 2;
+  } else if (firstLength >= 192 && firstLength <= 223) {
+    if (packetBytes.length < 3) {
+      throw new Error('OpenPGP packet length is truncated.');
+    }
+    bodyLength = ((firstLength - 192) << 8) + packetBytes[2] + 192;
+    bodyOffset = 3;
+  } else if (firstLength === 255) {
+    if (packetBytes.length < 6) {
+      throw new Error('OpenPGP packet length is truncated.');
+    }
+    bodyLength = uint32FromBE(packetBytes.slice(2, 6));
+    bodyOffset = 6;
+  } else {
+    throw new Error('Partial-length OpenPGP packets are not supported by this parser.');
+  }
+
+  const bodyEnd = bodyOffset + bodyLength;
+  if (packetBytes.length < bodyEnd) {
+    throw new Error('OpenPGP packet body is truncated.');
+  }
+
+  return { tag, body: packetBytes.slice(bodyOffset, bodyEnd) };
+}
+
 function concat(...arrays: Uint8Array[]): Uint8Array {
   const totalLen = arrays.reduce((s, a) => s + a.length, 0);
   const out = new Uint8Array(totalLen);
@@ -320,13 +382,15 @@ function createPgpPublicKeyBlock(
   validFrom: string,
   v6PacketBody: Uint8Array
 ): string {
+  // Armor full OpenPGP packet bytes, not just the packet body.
+  const publicKeyPacket = wrapOpenPgpNewPacket(6, v6PacketBody);
   const header = `-----BEGIN PGP PUBLIC KEY BLOCK-----
 Version: OpenPGP v6 (RFC 9580)
 Hash: ${CRYPTO_PROFILE.hashAlgorithm}
 ${buildKeyCommentBlock(userInfo, fingerprint, validFrom, false)}
 `;
   const footer = `-----END PGP PUBLIC KEY BLOCK-----`;
-  return `${header}\n${base64WithLineBreaks(v6PacketBody)}\n${footer}`;
+  return `${header}\n${base64WithLineBreaks(publicKeyPacket)}\n${footer}`;
 }
 
 function createPgpPrivateKeyBlock(
@@ -726,19 +790,30 @@ export function sign(
  * Layout: version(1) || creation_time(4) || algorithm(1) || key_len(4) || key_material
  */
 export function extractRawPublicKeyFromV6Packet(packetBytes: Uint8Array): Uint8Array {
-  if (packetBytes.length < 10) {
+  let packetBody = packetBytes;
+
+  // Backward compatibility: older app versions armored only packet body bytes.
+  if ((packetBytes[0] & 0x80) !== 0) {
+    const parsed = unwrapOpenPgpNewPacket(packetBytes);
+    if (parsed.tag !== 6) {
+      throw new Error(`Unexpected OpenPGP packet tag ${parsed.tag}; expected public-key packet tag 6.`);
+    }
+    packetBody = parsed.body;
+  }
+
+  if (packetBody.length < 10) {
     throw new Error('v6 public key packet is too short.');
   }
 
-  const keyLength = uint32FromBE(packetBytes.slice(6, 10));
+  const keyLength = uint32FromBE(packetBody.slice(6, 10));
   const keyStart = 10;
   const keyEnd = keyStart + keyLength;
 
-  if (packetBytes.length < keyEnd) {
+  if (packetBody.length < keyEnd) {
     throw new Error('v6 public key packet key length is truncated.');
   }
 
-  const rawKey = packetBytes.slice(keyStart, keyEnd);
+  const rawKey = packetBody.slice(keyStart, keyEnd);
   assertLength(rawKey, SLH_DSA_PK_BYTES, 'Extracted SLH-DSA public key');
   return rawKey;
 }
